@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        FurAffinity Default Post Settings
 // @namespace   furaffinity-improvements
-// @version     0.1
+// @version     0.2
 // @description Adds default post settings to FurAffinity
 // @author      https://github.com/Raptor4694
 // @run-at      document-ready
@@ -20,7 +20,7 @@ const page = document.URL.substring(document.URL.indexOf("furaffinity.net/") + 1
  * @param link The link
  */
 function getUsernameFromRelativeLink(link) {
-    const match = /\/user\/([-~a-z0-9]+)\/?/g.exec(link);
+    let match = /\/user\/([-~a-z0-9]+)\/?/g.exec(link);
     if (match == null)
         return null;
     return match[1];
@@ -39,7 +39,7 @@ function getUsernameFromHref(element) {
  * @returns The currently logged in user's username or null.
  */
 function getUsername() {
-    let username = getUsernameFromHref($(`a#my-username[href^="/user/"]`).get(0));
+    let username = getUsernameFromHref($(`a[href^="/user/"]`).get(0));
     if (username != null)
         console.log(`Setting user: '${username}'`);
     return username;
@@ -188,32 +188,60 @@ function createRemoveDefaultButton(...names) {
     };
     return btn;
 }
-var setDefaultCategory = () => GM_setValue(`${ACTIVE_USER}.defaultCategory`, categoryDropdown.selectedIndex);
-var setDefaultTheme = () => GM_setValue(`${ACTIVE_USER}.defaultTheme`, themeDropdown.selectedIndex);
-var setDefaultSpecies = () => GM_setValue(`${ACTIVE_USER}.defaultSpecies`, speciesDropdown.selectedIndex);
-var setDefaultGender = () => GM_setValue(`${ACTIVE_USER}.defaultGender`, genderDropdown.selectedIndex);
+function createSetDefaultFunction(dropdown, name) {
+    function setDefault() {
+        GM_setValue(`${ACTIVE_USER}.default${name}`, dropdown.selectedIndex);
+        console.log(`Set default ${name} to ${dropdown.options[dropdown.selectedIndex].textContent}`);
+    }
+    setDefault.name = `setDefault${name}`;
+    return setDefault;
+}
+var setDefaultCategory = createSetDefaultFunction(categoryDropdown, "Category");
+var setDefaultTheme = createSetDefaultFunction(themeDropdown, "Theme");
+var setDefaultSpecies = createSetDefaultFunction(speciesDropdown, "Species");
+var setDefaultGender = createSetDefaultFunction(genderDropdown, "Gender");
 var setDefaultRating = () => ratingRadioButtons.each(function () {
     if (this.checked) {
         GM_setValue(`${ACTIVE_USER}.defaultRating`, this.valueAsNumber);
+        console.log(`Set default Rating to ${this.nextElementSibling?.textContent}`);
     }
 });
-var setDefaultTitle = () => GM_setValue(`${ACTIVE_USER}.defaultTitle`, titleInput.value);
-var setDefaultDescription = () => GM_setValue(`${ACTIVE_USER}.defaultDescription`, descriptionTextArea.value);
-var setDefaultKeywords = () => GM_setValue(`${ACTIVE_USER}.defaultKeywords`, keywordsTextArea.value);
-var setDefaultDisableComments = () => GM_setValue(`${ACTIVE_USER}.defaultDisableComments`, disableCommentsCheckbox.checked);
-var setDefaultPutInScraps = () => GM_setValue(`${ACTIVE_USER}.defaultPutInScraps`, putInScrapsCheckbox.checked);
+function setDefaultTitle() {
+    GM_setValue(`${ACTIVE_USER}.defaultTitle`, titleInput.value);
+    console.log(`Set default Title to ${titleInput.value}`);
+}
+function setDefaultDescription() {
+    GM_setValue(`${ACTIVE_USER}.defaultDescription`, descriptionTextArea.value);
+    console.log(`Set default Description to ${descriptionTextArea.value}`);
+}
+function setDefaultKeywords() {
+    GM_setValue(`${ACTIVE_USER}.defaultKeywords`, keywordsTextArea.value);
+    console.log(`Set default Keywords to ${keywordsTextArea.value}`);
+}
+function setDefaultDisableComments() {
+    GM_setValue(`${ACTIVE_USER}.defaultDisableComments`, disableCommentsCheckbox.checked);
+    console.log(`Set default DisableComments to ${disableCommentsCheckbox.checked}`);
+}
+function setDefaultPutInScraps() {
+    GM_setValue(`${ACTIVE_USER}.defaultPutInScraps`, putInScrapsCheckbox.checked);
+    console.log(`Set default PutInScraps to ${putInScrapsCheckbox.checked}`);
+}
 var setDefaultFolders = () => {
-    const folderIds = [];
+    let folderIds = [];
+    let folderNames = [];
     folderCheckboxes.each(function () {
         if (this.checked) {
             folderIds.push(this.value);
+            folderNames.push(this.nextElementSibling?.textContent ?? "<error>");
         }
     });
     GM_setValue(`${ACTIVE_USER}.defaultFolders`, folderIds.join(','));
+    console.log(`Set default Folders to ${folderNames.join(', ')}`);
 };
 // Main Procedures
 /** Main procedure for the Modern theme */
 function main_modernTheme() {
+    console.log("Theme detected: Modern");
     setDefaults();
     /*** Add buttons to save and remove defaults ***/
     $(`h4`).each(function () {
@@ -260,6 +288,7 @@ function main_modernTheme() {
 }
 /** Main procedure for the Classic theme */
 function main_classicTheme() {
+    console.log("Theme detected: Classic");
     setDefaults();
     /*** Add buttons to save and remove defaults ***/
     titleInput.after(document.createElement('br'), ...createDefaultButtons(setDefaultTitle, 'Title'));
