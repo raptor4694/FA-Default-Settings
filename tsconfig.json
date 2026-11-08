@@ -12,6 +12,7 @@
         "strictFunctionTypes": true,
         "strictNullChecks": true,
         "strictPropertyInitialization": true,
-        "noUnusedLocals": true
+        "noUnusedLocals": true,
+        "types": ["jquery"]
     }
 }

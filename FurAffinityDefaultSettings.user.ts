@@ -6,6 +6,7 @@
 // @author      https://github.com/Raptor4694
 // @run-at      document-ready
 // @match       https://www.furaffinity.net/submit/finalize/
+// @match       https://www.furaffinity.net/controls/submissions/changeinfo/*/
 // @require     http://code.jquery.com/jquery-latest.js
 // @grant       GM_getValue
 // @grant       GM_setValue
@@ -25,13 +26,30 @@ console.log(`${isClassic? "Classic" : "Modern"} theme detected!`)
 const page = document.URL.substring(document.URL.indexOf("furaffinity.net/") + 16)
 
 /**
+ * Outputs a message to the console, prepended with a tag indicating the message
+ * is from this userscript.
+ * @param data The message to log
+ */
+function userscriptLog(...data: any[]): void {
+    console.log("[FurAffinityDefaultSettings] ", ...data)
+}
+
+/**
+ * Converts all tags and codes to modern format.
+ * @param text The text to convert
+ * @returns the converted text
+ */
+function fixTagsAndCodes(text: string): string {
+    return text
+}
+
+/**
  * Extracts a username from a link such as "/user/raptor4694/"
  * @param link The link
+ * @returns The username in the link
  */
 function getUsernameFromRelativeLink(link: string): string | null {
-    let match = /\/user\/([-~a-z0-9]+)\/?/g.exec(link)
-    if (match == null) return null
-    return match[1]
+    return /\/user\/([-~a-z0-9]+)\/?/g.exec(link)?.[1] ?? null
 }
 
 /**
@@ -40,8 +58,7 @@ function getUsernameFromRelativeLink(link: string): string | null {
  */
 function getUsernameFromHref(element: HTMLElement | null | undefined): string | null {
     let href = element?.getAttribute('href')
-    if (href == null) return null
-    return getUsernameFromRelativeLink(href)
+    return href == null? null : getUsernameFromRelativeLink(href)
 }
 
 /**
@@ -49,9 +66,13 @@ function getUsernameFromHref(element: HTMLElement | null | undefined): string | 
  */
 function getUsername(): string | null {
     let username = getUsernameFromHref($(`a[href^="/user/"]`).get(0))
-    if (username != null) console.log(`Setting user: '${username}'`)
+    if (username != null) userscriptLog(`Setting user: '${username}'`)
     return username
 }
+
+const GENERAL_RADIO_INDEX = 0
+const MATURE_RADIO_INDEX = 2
+const ADULT_RADIO_INDEX = 1
 
 // Input element getters
 /// curiously enough, these work no matter which template is used
@@ -59,8 +80,11 @@ const categoryDropdown = $(`select[name="cat"]`).get(0) as HTMLSelectElement
 const themeDropdown = $(`select[name="atype"]`).get(0) as HTMLSelectElement
 const speciesDropdown = $(`select[name="species"]`).get(0) as HTMLSelectElement
 const genderDropdown = $(`select[name="gender"]`).get(0) as HTMLSelectElement
-var getRatingRadioButton = (rating: number) => $(`input[name="rating"][value="${rating}"]`).get(0) as HTMLInputElement
-const ratingRadioButtons = ($(`input[name="rating"]`) as JQuery<HTMLInputElement>)
+var getRatingRadioButton = (rating: number) => $(`input.radio[name="rating"][value="${rating}"]`).get(0) as HTMLInputElement
+const ratingRadioButtons = ($(`input.radio[name="rating"]`) as JQuery<HTMLInputElement>)
+const generalRadioButton = ratingRadioButtons.get(GENERAL_RADIO_INDEX)!
+const matureRadioButton = ratingRadioButtons.get(MATURE_RADIO_INDEX)!
+const adultRadioButton = ratingRadioButtons.get(ADULT_RADIO_INDEX)!
 const disableCommentsCheckbox = $(`input[name="lock_comments"]`).get(0) as HTMLInputElement
 const putInScrapsCheckbox = $(`input[name="scrap"]`).get(0) as HTMLInputElement
 const folderCheckboxes = ($(`input[name="folder_ids[]"]`) as JQuery<HTMLInputElement>)
@@ -69,87 +93,135 @@ const descriptionTextArea = $(`textarea[name="message"]`).get(0) as HTMLTextArea
 const keywordsTextArea = $(`textarea[name="keywords"]`).get(0) as HTMLTextAreaElement
 const keywordCount = $(`.keywords span`).get(0) as HTMLSpanElement
 
+function isRatingUnset(): boolean {
+    for (let i = 0; i < ratingRadioButtons.length; i++) {
+        var radioButton = ratingRadioButtons.get(i)
+        if (radioButton == undefined) break
+        if (radioButton.checked) return false
+    }
+    return true
+}
+
 /** Set defaults */
-function setDefaults() {
+async function setDefaults() {
+    // Set the default keywords
+    const defaultKeywords = await GM_getValue(`${ACTIVE_USER}.defaultKeywords`, "")
+    userscriptLog(`defaultKeywords = ${defaultKeywords}`)
+    if (defaultKeywords && !keywordsTextArea.defaultValue) {
+        keywordsTextArea.defaultValue = defaultKeywords
+        keywordCount.innerText = `${parseInt(keywordCount.innerText, 10) - defaultKeywords.length}`
+    }
+
+    // Set the default title
+    const defaultTitle = await GM_getValue(`${ACTIVE_USER}.defaultTitle`, "")
+    userscriptLog(`defaultTitle = ${defaultTitle}`)
+    if (defaultTitle && !titleInput.defaultValue) {
+        titleInput.defaultValue = defaultTitle
+    }
+
+    // Set the default description
+    const defaultDescription = await GM_getValue(`${ACTIVE_USER}.defaultDescription`, "")
+    userscriptLog(`defaultDescription = ${defaultDescription}`)
+    if (defaultDescription && !descriptionTextArea.defaultValue) {
+        descriptionTextArea.defaultValue = defaultDescription
+    }
+    
     // Set the default selections for the dropdown boxes
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultCategory`, 0)).then((defaultCategory: number) => {
-        console.log(`defaultCategory = ${defaultCategory}`)
-        if (defaultCategory == 0) return
+    const defaultCategory = await GM_getValue(`${ACTIVE_USER}.defaultCategory`, 0)
+    userscriptLog(`defaultCategory = ${defaultCategory}`)
+    if (defaultCategory != 0) {
         categoryDropdown.selectedIndex = defaultCategory
-    })
+    }
 
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultTheme`, 0)).then((defaultTheme: number) => {
-        console.log(`defaultTheme = ${defaultTheme}`)
-        if (defaultTheme == 0) return
+    const defaultTheme = await GM_getValue(`${ACTIVE_USER}.defaultTheme`, 0)
+    userscriptLog(`defaultTheme = ${defaultTheme}`)
+    if (defaultTheme != 0) {
         themeDropdown.selectedIndex = defaultTheme
-    })
+    }
 
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultSpecies`, 0)).then((defaultSpecies: number) => {
-        console.log(`defaultSpecies = ${defaultSpecies}`)
-        if (defaultSpecies == 0) return
+    const defaultSpecies = await GM_getValue(`${ACTIVE_USER}.defaultSpecies`, 0)
+    userscriptLog(`defaultSpecies = ${defaultSpecies}`)
+    if (defaultSpecies != 0) {
         speciesDropdown.selectedIndex = defaultSpecies
-    })
+    }
 
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultGender`, 0)).then((defaultGender: number) => {
-        console.log(`defaultGender = ${defaultGender}`)
-        if (defaultGender == 0) return
+    const defaultGender = await GM_getValue(`${ACTIVE_USER}.defaultGender`, 0)
+    userscriptLog(`defaultGender = ${defaultGender}`)
+    if (defaultGender != 0) {
         genderDropdown.selectedIndex = defaultGender
-    })
+    }
 
     // Set the default rating
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultRating`, -1)).then((defaultRating: number) => {
-        console.log(`defaultRating = ${defaultRating}`)
-        if (defaultRating == -1) return
+    const defaultRating = await GM_getValue(`${ACTIVE_USER}.defaultRating`, -1)
+    userscriptLog(`defaultRating = ${defaultRating}`)
+    if (defaultRating == -1) {
         getRatingRadioButton(defaultRating).checked = true
-    })
+    }
 
     // Set whether 'Disable Comments' is checked by default
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultDisableComments`, false)).then((defaultDisableComments: boolean) => {
-        console.log(`defaultDisableComments = ${defaultDisableComments}`)
-        if (!defaultDisableComments) return
-        disableCommentsCheckbox.checked = true
-    })
+    const defaultDisableComments = await GM_getValue(`${ACTIVE_USER}.defaultDisableComments`, false)
+    userscriptLog(`defaultDisableComments = ${defaultDisableComments}`)
+    disableCommentsCheckbox.checked = defaultDisableComments
 
     // Set whether 'Put in Scraps' is checked by default
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultPutInScraps`, false)).then((defaultPutInScraps: boolean) => {
-        console.log(`defaultPutInScraps = ${defaultPutInScraps}`)
-        if (!defaultPutInScraps) return
-        putInScrapsCheckbox.checked = true
-    })
+    const defaultPutInScraps = await GM_getValue(`${ACTIVE_USER}.defaultPutInScraps`, false)
+    userscriptLog(`defaultPutInScraps = ${defaultPutInScraps}`)
+    putInScrapsCheckbox.checked = defaultPutInScraps
 
     // Set the default folders to put it in
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultFolders`, "")).then((defaultFolders: string) => {
-        console.log(`defaultFolders = ${defaultFolders}`)
-        if (!defaultFolders) return
-        const folders = defaultFolders.split(',');
+    const defaultFolders = await GM_getValue(`${ACTIVE_USER}.defaultFolders`, "")
+    userscriptLog(`defaultFolders = ${defaultFolders}`)
+    if (defaultFolders) {
+        const folders = defaultFolders.split(',')
         folderCheckboxes.each(function() {
             if (folders.includes(this.value)) {
                 this.checked = true
             }
         })
-    })
+    }
+}
 
-    // Set the default title
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultTitle`, "")).then((defaultTitle: string) => {
-        console.log(`defaultTitle = ${defaultTitle}`)
-        if (!defaultTitle) return
-        titleInput.defaultValue = defaultTitle
-    })
+function setDisabled(this: { disabled: boolean }) {
+    this.disabled = true
+}
 
-    // Set the default description
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultDescription`, "")).then((defaultDescription: string) => {
-        console.log(`defaultDescription = ${defaultDescription}`)
-        if (!defaultDescription) return
-        descriptionTextArea.defaultValue = defaultDescription
-    })
+function setEnabled(this: { disabled: boolean }) {
+    this.disabled = false
+}
 
-    // Set the default keywords
-    Promise.resolve(GM_getValue(`${ACTIVE_USER}.defaultKeywords`, "")).then((defaultKeywords: string) => {
-        console.log(`defaultKeywords = ${defaultKeywords}`)
-        if (!defaultKeywords) return
-        keywordsTextArea.defaultValue = defaultKeywords
-        keywordCount.innerText = `${parseInt(keywordCount.innerText, 10) - defaultKeywords.length}`
-    })
+function onThemeDropdownUpdated(this: HTMLSelectElement) {
+    var options = this.selectedOptions
+    for (let i = 0; i < options.length; i++) {
+        let option = options[0]
+        switch (option.innerText) {
+        case "Hyper":
+        case "Water Sports":
+            adultRadioButton.checked = true
+            ratingRadioButtons.each(setDisabled)
+            break
+        case "Bondage":
+            ratingRadioButtons.each(setEnabled)
+            if (generalRadioButton.checked || isRatingUnset()) {
+                matureRadioButton.checked = true
+            }
+            generalRadioButton.disabled = true
+            break
+        case "Gore / Macabre Art":
+            ratingRadioButtons.each(setEnabled)
+            if (generalRadioButton.checked || isRatingUnset()) {
+                matureRadioButton.checked = true
+            }
+            break
+        default:
+            ratingRadioButtons.each(setEnabled)
+            break
+        }
+    }
+}
+
+function addListeners() {
+    themeDropdown.addEventListener('change', onThemeDropdownUpdated)
+    onThemeDropdownUpdated.call(themeDropdown)
 }
 
 function createDefaultButtons(set_callback: (this: GlobalEventHandlers, event: MouseEvent) => any, ...names: string[]) {
@@ -165,45 +237,46 @@ function createDefaultButtons(set_callback: (this: GlobalEventHandlers, event: M
     return [setDefaultButton, removeDefaultButton]
 }
 
-function createSetDefaultButton(callback: (this: GlobalEventHandlers, event: MouseEvent) => any) {
+function createButton(title: string, onclick?: (this: GlobalEventHandlers, event: MouseEvent) => any) {
     const btn = document.createElement('button')
-    btn.innerText = "Set as default"
-    btn.type = 'button'
-    btn.style.setProperty('font-size', '10px', 'important')
-    btn.style.padding = '0px 13px 2px 12px'
-    if (!isClassic) btn.style.marginLeft = '1em'
-    btn.style.lineHeight = '1em'
-    btn.className = 'button'
-    btn.onclick = function(event: MouseEvent) {
-        btn.innerText = "Default set!"
-        setTimeout(() => btn.innerText = "Set as default", 3000)
-        return callback.call(this, event)
-    }
-    return btn
-}
-
-function createRemoveDefaultButton(...names: string[]) {
-    const btn = document.createElement('button')
-    btn.innerText = "🗑"
+    btn.innerText = btn.title = title
     btn.type = 'button'
     btn.style.setProperty('font-size', '10px', 'important')
     btn.style.padding = '0px 0px 2px 0px'
     btn.style.marginLeft = '3px'
     btn.style.lineHeight = '1em'
+    btn.style.verticalAlign = 'center'
     btn.className = 'button'
-    btn.title = `Remove Default ${names.join(', ')}`
-    btn.onclick = function(event: MouseEvent) {
+    if (onclick) btn.onclick = onclick
+    return btn
+}
+
+function createSetDefaultButton(callback: (this: GlobalEventHandlers, event: MouseEvent) => any) {
+    const btn = createButton("Set as default", function(event: MouseEvent) {
+        const btn = event.currentTarget as HTMLButtonElement
+        btn.innerText = "Default set!"
+        setTimeout(() => btn.innerText = "Set as default", 3000)
+        return callback.call(this, event)
+    })
+    btn.style.padding = '0px 13px 2px 12px'
+    if (!isClassic) btn.style.marginLeft = '1em'
+    return btn
+}
+
+function createRemoveDefaultButton(...names: string[]) {
+    const btn = createButton("🗑" /* trash bin icon */, function() {
         for (let name of names) {
             GM_deleteValue(`${ACTIVE_USER}.default${name}`)
         }
-    }
+    })
+    btn.title = `Remove Default ${names.join(', ')}`
     return btn
 }
 
 function createSetDefaultFunction(dropdown: HTMLSelectElement, name: string) {
     function setDefault() {
         GM_setValue(`${ACTIVE_USER}.default${name}`, dropdown.selectedIndex)
-        console.log(`Set default ${name} to ${dropdown.options[dropdown.selectedIndex].textContent}`)
+        userscriptLog(`Set default ${name} to ${dropdown.options[dropdown.selectedIndex].textContent}`)
     }
     setDefault.name = `setDefault${name}`
     return setDefault
@@ -216,28 +289,28 @@ var setDefaultGender = createSetDefaultFunction(genderDropdown, "Gender")
 var setDefaultRating = () => ratingRadioButtons.each(function() {
     if (this.checked) {
         GM_setValue(`${ACTIVE_USER}.defaultRating`, this.valueAsNumber)
-        console.log(`Set default Rating to ${this.nextElementSibling?.textContent}`)
+        userscriptLog(`Set default Rating to ${this.nextElementSibling?.textContent}`)
     }
 })
 function setDefaultTitle() {
     GM_setValue(`${ACTIVE_USER}.defaultTitle`, titleInput.value)
-    console.log(`Set default Title to ${titleInput.value}`)
+    userscriptLog(`Set default Title to ${titleInput.value}`)
 }
 function setDefaultDescription() {
     GM_setValue(`${ACTIVE_USER}.defaultDescription`, descriptionTextArea.value)
-    console.log(`Set default Description to ${descriptionTextArea.value}`)
+    userscriptLog(`Set default Description to ${descriptionTextArea.value}`)
 }
 function setDefaultKeywords() {
     GM_setValue(`${ACTIVE_USER}.defaultKeywords`, keywordsTextArea.value)
-    console.log(`Set default Keywords to ${keywordsTextArea.value}`)
+    userscriptLog(`Set default Keywords to ${keywordsTextArea.value}`)
 }
 function setDefaultDisableComments() {
     GM_setValue(`${ACTIVE_USER}.defaultDisableComments`, disableCommentsCheckbox.checked)
-    console.log(`Set default DisableComments to ${disableCommentsCheckbox.checked}`)
+    userscriptLog(`Set default DisableComments to ${disableCommentsCheckbox.checked}`)
 }
 function setDefaultPutInScraps() {
     GM_setValue(`${ACTIVE_USER}.defaultPutInScraps`, putInScrapsCheckbox.checked)
-    console.log(`Set default PutInScraps to ${putInScrapsCheckbox.checked}`)
+    userscriptLog(`Set default PutInScraps to ${putInScrapsCheckbox.checked}`)
 }
 var setDefaultFolders = () => {
     let folderIds: string[] = []
@@ -249,14 +322,15 @@ var setDefaultFolders = () => {
         }
     })
     GM_setValue(`${ACTIVE_USER}.defaultFolders`, folderIds.join(','))
-    console.log(`Set default Folders to ${folderNames.join(', ')}`)
+    userscriptLog(`Set default Folders to ${folderNames.join(', ')}`)
 }
 
 // Main Procedures
 /** Main procedure for the Modern theme */
-function main_modernTheme() {
-    console.log("Theme detected: Modern")
+async function main_modernTheme() {
+    userscriptLog("Theme detected: Modern")
     setDefaults()
+    addListeners()
 
     /*** Add buttons to save and remove defaults ***/
     $(`h4`).each(function() {
@@ -271,23 +345,40 @@ function main_modernTheme() {
             this.append(...createDefaultButtons(setDefaultSpecies, 'Species'))
             break
         case "Gender":
+        case "Genders":
             this.append(...createDefaultButtons(setDefaultGender, 'Gender'))
             break
+        case "Rating":
         case "Submission Rating":
             this.append(...createDefaultButtons(setDefaultRating, 'Rating'))
             break
         case "Title":
             this.append(...createDefaultButtons(setDefaultTitle, 'Title'))
             break
+        case "Description":
         case "Submission Description":
             this.append(...createDefaultButtons(setDefaultDescription, 'Description'))
+            if (descriptionTextArea.defaultValue) {
+                this.append(createButton(":iconusername: → @@username", function(event: MouseEvent) {
+                    const descriptionTextArea = event.currentTarget as HTMLTextAreaElement
+                    descriptionTextArea.value = descriptionTextArea.value.replace(/(?<!@):icon([-~a-z0-9]+):(?![-~a-z0-9])/g, '@@$1')
+                }), createButton(":linkusername: → @username", function(event) {
+                    const descriptionTextArea = event.currentTarget as HTMLTextAreaElement
+                    descriptionTextArea.value = descriptionTextArea.value.replace(/(?<!@):link([-~a-z0-9]+):(?![-~a-z0-9])/g, '@$1')
+                }), createButton(":usernameicon: → @@username", function(event) {
+                    const descriptionTextArea = event.currentTarget as HTMLTextAreaElement
+                    descriptionTextArea.value = descriptionTextArea.value.replace(/(?<!@):([-~a-z0-9]+)icon:(?![-~a-z0-9])/g, '@$1')
+                                                                         .replace(/:([-~a-z0-9]+)icon:/g, ':icon$1:')
+                }))
+            }
+            break
+        default:
+            if (this.innerText.startsWith("Keywords")) {
+                this.append(...createDefaultButtons(setDefaultKeywords, 'Keywords'))
+            }
             break
         }
     })
-
-    const [keywordsBtn, delKeywordsBtn] = createDefaultButtons(setDefaultKeywords, 'Keywords')
-    keywordsTextArea.before(keywordsBtn)
-    keywordsBtn.after(delKeywordsBtn)
 
     $('.section-header > h2').each(function() {
         switch (this.innerText) {
@@ -306,8 +397,9 @@ function main_modernTheme() {
 
 /** Main procedure for the Classic theme */
 function main_classicTheme() {
-    console.log("Theme detected: Classic")
+    userscriptLog("Theme detected: Classic")
     setDefaults()
+    addListeners()
 
     /*** Add buttons to save and remove defaults ***/
     titleInput.after(
